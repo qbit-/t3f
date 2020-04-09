@@ -203,8 +203,7 @@ def tt_dense_matmul(tt_matrix_a, matrix_b):
   b_rows = matrix_b.get_shape().as_list()[0]
   if a_columns is not None and b_rows is not None:
     if a_columns != b_rows:
-      raise ValueError('Arguments shapes should align got %d and %d instead.' %
-                       (tt_matrix_a.get_shape(), matrix_b.get_shape()))
+      raise ValueError('Arguments shapes should align got {} and {} instead.'.format(tt_matrix_a.get_shape(), matrix_b.get_shape()))
 
   a_shape = shapes.lazy_shape(tt_matrix_a)
   a_raw_shape = shapes.lazy_raw_shape(tt_matrix_a)
@@ -213,19 +212,31 @@ def tt_dense_matmul(tt_matrix_a, matrix_b):
   else:
     b_shape = tf.shape(matrix_b)
   a_ranks = shapes.lazy_tt_ranks(tt_matrix_a)
-  # If A is (i0, ..., id-1) x (j0, ..., jd-1) and B is (j0, ..., jd-1) x K,
+  # If A is (i0, ..., id-1) x (j0, ..., jd-1) and B is (j0, ..., jd-1) x K
   # data is (K, j0, ..., jd-2) x jd-1 x 1
   data = tf.transpose(matrix_b)
-  data = tf.reshape(data, (-1, a_raw_shape[1][-1], 1))
+  data = tf.reshape(data, (-1, a_raw_shape[1][-1] * 1))
   for core_idx in reversed(range(ndims)):
     curr_core = tt_matrix_a.tt_cores[core_idx]
-    # On the k = core_idx iteration, after applying einsum the shape of data
-    # becomes ik x (ik-1..., id-1, K, j0, ..., jk-1) x rank_k
-    data = tf.einsum('aijb,rjb->ira', curr_core, data)
+    # curr_core: rank_k x ik x jk x rank_k+1=>(rank_k, ik)x(jk, rank_k+1)
+    curr_core = tf.reshape(
+      curr_core,
+      (-1, a_raw_shape[1][core_idx] * a_ranks[core_idx+1]))
+    # curr_core: (rank_k, ik)x(jk, rank_k+1)=>(jk, rank_k+1)x(rank_k, ik)
+    curr_core = tf.transpose(curr_core)
+
+    # data: (ik-1..., id-1, K, j0, ..., jk-1) x (rank_k, ik)
+    data = tf.matmul(data, curr_core)
+    # data: (ik-1..., id-1, K, j0, ..., jk-1, rank_k) x ik
+    data = tf.reshape(data, (-1, a_raw_shape[0][core_idx]))
+    # data: ik x (ik-1..., id-1, K, j0, ..., jk-1, rank_k)
+    data = tf.transpose(data)
+
     if core_idx > 0:
       # After reshape the shape of data becomes
-      # (ik, ..., id-1, K, j0, ..., jk-2) x jk-1 x rank_k
-      new_data_shape = (-1, a_raw_shape[1][core_idx - 1], a_ranks[core_idx])
+      # (ik, ..., id-1, K, j0, ..., jk-2) x (jk-1, rank_k)
+      new_data_shape = (
+        -1, a_raw_shape[1][core_idx - 1] * a_ranks[core_idx])
       data = tf.reshape(data, new_data_shape)
   # At the end the shape of the data is (i0, ..., id-1) x K
   return tf.reshape(data, (a_shape[0], b_shape[1]))
