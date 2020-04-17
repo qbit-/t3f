@@ -21,52 +21,64 @@ def _validate_input_parameters(is_tensor, shape, **params):
 
   if is_tensor:
     if len(shape.shape) != 1:
-      raise ValueError('shape should be 1d array, got %a' % shape)
+      raise ValueError('shape should be 1d array, got {}'.format(shape))
     if np.any(shape < 1):
-      raise ValueError('all elements in `shape` should be positive, got %a' %
-                       shape)
+      raise ValueError(
+        'all elements in `shape` should be positive, got {}'.format(
+          shape))
     if not all(isinstance(sh, np.integer) for sh in shape):
-      raise ValueError('all elements in `shape` should be integers, got %a' %
-                       shape)
+      raise ValueError(
+        'all elements in `shape` should be integers, got {}'.format(
+          shape))
   else:
     if len(shape.shape) != 2:
-      raise ValueError('shape should be 2d array, got %a' % shape)
+      raise ValueError('shape should be 2d array, got {}'.format(shape))
     if shape[0].size != shape[1].size:
-      raise ValueError('shape[0] should have the same length as shape[1], but'
-                       'got %d and %d' % (shape[0].size, shape[1].size))
+      raise ValueError(
+        'shape[0] should have the same length as shape[1], but'
+        'got {} and {}'.format((shape[0].size, shape[1].size)))
     if np.any(shape.flatten() < 1):
-      raise ValueError('all elements in `shape` should be positive, got %a' %
-                       shape)
+      raise ValueError(
+        'all elements in `shape` should be positive, got {}'.format(
+          shape))
     if not all(isinstance(sh, np.integer) for sh in shape.flatten()):
-      raise ValueError('all elements in `shape` should be integers, got %a' %
-                       shape)
+      raise ValueError(
+        'all elements in `shape` should be integers, got {}'.format(
+          shape))
 
-  if 'batch_size' in params:
+  if 'batch_size' in params and params['batch_size'] is not None:
     batch_size = params['batch_size']
     if not isinstance(batch_size, (int, np.integer)):
-      raise ValueError('`batch_size` should be integer, got %f' % batch_size)
+      raise ValueError(
+        '`batch_size` should be integer, got {}'.format(batch_size))
     if batch_size < 1:
-      raise ValueError('Batch size should be positive, got %d' % batch_size)
+      raise ValueError(
+        'Batch size should be positive, got {}'.format(batch_size))
   if 'tt_rank' in params:
     tt_rank = params['tt_rank']
     if tt_rank.size == 1:
-      if not isinstance(tt_rank[()], np.integer):
-        raise ValueError('`tt_rank` should be integer, got %f' % tt_rank[()])
+      if not isinstance(tt_rank.item(), int):
+        raise ValueError(
+          '`tt_rank` should be integer, got {}'.format(tt_rank.item()))
     if tt_rank.size > 1:
       if not all(isinstance(tt_r, np.integer) for tt_r in tt_rank):
-        raise ValueError('all elements in `tt_rank` should be integers, got'
-                         ' %a' % tt_rank)
+        raise ValueError(
+          'all elements in `tt_rank` should be integers, got'
+          ' {}'.format(tt_rank))
     if np.any(tt_rank < 1):
-      raise ValueError('`tt_rank` should be positive, got %a' % tt_rank)
+      raise ValueError(
+        '`tt_rank` should be positive, got {}'.format(tt_rank))
 
     if is_tensor:
       if tt_rank.size != 1 and tt_rank.size != (shape.size + 1):
-        raise ValueError('`tt_rank` array has inappropriate size, expected'
-                         '1 or %d, got %d' % (shape.size + 1, tt_rank.size))
+        raise ValueError(
+          '`tt_rank` array has inappropriate size, expected'
+          '1 or {}, got {}'.format(shape.size + 1, tt_rank.size))
     else:
       if tt_rank.size != 1 and tt_rank.size != (shape[0].size + 1):
-        raise ValueError('`tt_rank` array has inappropriate size, expected'
-                         '1 or %d, got %d' % (shape[0].size + 1, tt_rank.size))
+        raise ValueError(
+          '`tt_rank` array has inappropriate size, expected'
+          '1 or {}, got {}'.format(shape[0].size + 1, tt_rank.size))
 
 
 def tensor_ones(shape, dtype=tf.float32, name='t3f_tensor_ones'):
@@ -739,10 +751,13 @@ def random_matrix_batch(shape, tt_rank=2, batch_size=1, mean=0., stddev=1.,
     raise NotImplementedError('non-zero mean is not supported yet')
 
 
-def glorot_initializer(shape, tt_rank=2, dtype=tf.float32,
+def glorot_initializer(shape, tt_rank=2, batch_size=None,
+                       dtype=tf.float32,
                        name='t3f_glorot_initializer'):
-  """Constructs a random TT matrix with entrywise variance 2.0 / (n_in + n_out)
-
+  """Constructs a random TT matrix with entrywise
+     variance 2.0 / (n_in + n_out)
+     Note that if TensorBatch is requested then we initialize
+     every element in batch with this variance
   Args:
     shape: 2d array, shape[0] is the shape of the matrix row-index,
       shape[1] is the shape of the column index.
@@ -753,12 +768,15 @@ def glorot_initializer(shape, tt_rank=2, dtype=tf.float32,
         glorot_initializer([None, [2, 2, 2]])
       will create an 8-element column and row vectors correspondingly.
     tt_rank: a number or a (d+1)-element array with ranks.
+    batch_size: batch size for tensor batches, default None
     dtype: [tf.float32] dtype of the resulting matrix.
     name: string, name of the Op.
 
   Returns:
     TensorTrain containing a TT-matrix of size
       np.prod(shape[0]) x np.prod(shape[1])
+    or TensorTrainBatch with TT-matrices of size
+     np.prod(shape[0]) x np.prod(shape[1]) and batch_size 
   """
 
   # In case the shape is immutable.
@@ -771,19 +789,28 @@ def glorot_initializer(shape, tt_rank=2, dtype=tf.float32,
     shape[1] = np.ones(len(shape[0]), dtype=int)
   shape = np.array(shape)
   tt_rank = np.array(tt_rank)
-  _validate_input_parameters(is_tensor=False, shape=shape, tt_rank=tt_rank)
+  _validate_input_parameters(
+    is_tensor=False, shape=shape, tt_rank=tt_rank, batch_size=batch_size)
+
   n_in = np.prod(shape[0])
   n_out = np.prod(shape[1])
   lamb = 2.0 / (n_in + n_out)
-
+ 
   with tf.name_scope(name):
-    return random_matrix(shape, tt_rank=tt_rank, stddev=np.sqrt(lamb),
-                         dtype=dtype)
+    if batch_size is None:
+      return random_matrix(shape, tt_rank=tt_rank, stddev=np.sqrt(lamb),
+                           dtype=dtype)
+    else:
+      return random_matrix_batch(shape, tt_rank=tt_rank,
+                                 batch_size=batch_size,
+                                 stddev=np.sqrt(lamb), dtype=dtype)
 
 
-def he_initializer(shape, tt_rank=2, dtype=tf.float32,
+def he_initializer(shape, tt_rank=2, batch_size=None, dtype=tf.float32,
                    name='t3f_he_initializer'):
   """Constructs a random TT matrix with entrywise variance 2.0 / n_in
+     Note that if TensorBatch is requested then we initialize
+     every element in batch with this variance
 
   Args:
     shape: 2d array, shape[0] is the shape of the matrix row-index,
@@ -795,6 +822,7 @@ def he_initializer(shape, tt_rank=2, dtype=tf.float32,
         he_initializer([None, [2, 2, 2]])
       will create an 8-element column and row vectors correspondingly.
     tt_rank: a number or a (d+1)-element array with ranks.
+    batch_size: batch size for tensor batches, default None
     dtype: [tf.float32] dtype of the resulting matrix.
     name: string, name of the Op.
 
@@ -813,18 +841,28 @@ def he_initializer(shape, tt_rank=2, dtype=tf.float32,
     shape[1] = np.ones(len(shape[0]), dtype=int)
   shape = np.array(shape)
   tt_rank = np.array(tt_rank)
-  _validate_input_parameters(is_tensor=False, shape=shape, tt_rank=tt_rank)
+  _validate_input_parameters(
+    is_tensor=False, shape=shape, tt_rank=tt_rank, batch_size=batch_size)
+
   n_in = np.prod(shape[0])
   lamb = 2.0 / n_in
 
   with tf.name_scope(name):
-    return random_matrix(shape, tt_rank=tt_rank, stddev=np.sqrt(lamb),
-                         dtype=dtype)
+    if batch_size is None:
+      return random_matrix(shape, tt_rank=tt_rank, stddev=np.sqrt(lamb),
+                           dtype=dtype)
+    else:
+      return random_matrix_batch(shape, tt_rank=tt_rank,
+                                 batch_size=batch_size,
+                                 stddev=np.sqrt(lamb), dtype=dtype)
 
 
-def lecun_initializer(shape, tt_rank=2, dtype=tf.float32,
+def lecun_initializer(shape, tt_rank=2, batch_size=None,
+                      dtype=tf.float32,
                       name='t3f_lecun_initializer'):
   """Constructs a random TT matrix with entrywise variance 1.0 / n_in
+     Note that if TensorBatch is requested then we initialize
+     every element in batch with this variance
 
   Args:
     shape: 2d array, shape[0] is the shape of the matrix row-index,
@@ -836,6 +874,7 @@ def lecun_initializer(shape, tt_rank=2, dtype=tf.float32,
         lecun_initializer([None, [2, 2, 2]])
       will create an 8-element column and row vectors correspondingly.
     tt_rank: a number or a (d+1)-element array with ranks.
+    batch_size: batch size for tensor batches, default None
     dtype: [tf.float32] dtype of the resulting matrix.
     name: string, name of the Op.
 
@@ -854,9 +893,15 @@ def lecun_initializer(shape, tt_rank=2, dtype=tf.float32,
     shape[1] = np.ones(len(shape[0]), dtype=int)
   shape = np.array(shape)
   tt_rank = np.array(tt_rank)
-  _validate_input_parameters(is_tensor=False, shape=shape, tt_rank=tt_rank)
+  _validate_input_parameters(
+    is_tensor=False, shape=shape, tt_rank=tt_rank, batch_size=batch_size)
   n_in = np.prod(shape[0])
   lamb = 1.0 / n_in
   with tf.name_scope(name):
-    return random_matrix(shape, tt_rank=tt_rank, stddev=np.sqrt(lamb),
-                         dtype=dtype)
+    if batch_size is None:
+      return random_matrix(shape, tt_rank=tt_rank, stddev=np.sqrt(lamb),
+                           dtype=dtype)
+    else:
+      return random_matrix_batch(shape, tt_rank=tt_rank,
+                                 batch_size=batch_size,
+                                 stddev=np.sqrt(lamb), dtype=dtype)

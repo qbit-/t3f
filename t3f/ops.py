@@ -325,8 +325,8 @@ def matmul(a, b, name='t3f_matmul'):
     with tf.name_scope(name):
       return sparse_tt_matmul(a, b)
   else:
-    raise ValueError('Argument types are not supported in matmul: %s x %s' %
-                     (a, b))
+    raise ValueError('Argument types are not supported in matmul:'
+                     ' {} x {}'.format(a, b))
 
 
 def tt_tt_flat_inner(tt_a, tt_b):
