@@ -203,7 +203,9 @@ def tt_dense_matmul(tt_matrix_a, matrix_b):
   b_rows = matrix_b.get_shape().as_list()[0]
   if a_columns is not None and b_rows is not None:
     if a_columns != b_rows:
-      raise ValueError('Arguments shapes should align got {} and {} instead.'.format(tt_matrix_a.get_shape(), matrix_b.get_shape()))
+      raise ValueError(
+        'Arguments shapes should align got {} and {} instead.'.format(
+        tt_matrix_a.get_shape(), matrix_b.get_shape()))
 
   a_shape = shapes.lazy_shape(tt_matrix_a)
   a_raw_shape = shapes.lazy_raw_shape(tt_matrix_a)
@@ -326,7 +328,7 @@ def matmul(a, b, name='t3f_matmul'):
       return sparse_tt_matmul(a, b)
   else:
     raise ValueError('Argument types are not supported in matmul:'
-                     ' {} x {}'.format(a, b))
+                     ' {} x {}'.format(type(a), type(b)))
 
 
 def tt_tt_flat_inner(tt_a, tt_b):
